@@ -3,8 +3,8 @@ import {useEffect, useState} from 'react';
 import {createClient} from '@supabase/supabase-js';
 
 const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    'https://rduiuqfptvqkzucxulsx.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkdWl1cWZwdHZxa3p1Y3h1bHN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzOTI3NTMsImV4cCI6MjA1Nzk2ODc1M30.Buksbm_h1FhQDKjYRfJ9-rFI2sBnDfCXT_IV5mo6-4Q'
 );
 
 type Transaction = {
