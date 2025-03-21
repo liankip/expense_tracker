@@ -1,103 +1,123 @@
-import Image from "next/image";
+"use client"
+import {useEffect, useState} from 'react';
+import {createClient} from '@supabase/supabase-js';
+
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+type Transaction = {
+    id: number;
+    amount: number;
+    description: string;
+    type: 'income' | 'expense';
+    created_at: string;
+};
+
+type GroupedTransactions = {
+    date: string;
+    totalIncome: number;
+    totalExpense: number;
+    transactions: Transaction[];
+};
+
+function formatCurrency(amount: number) {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount);
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    const [groupedTransactions, setGroupedTransactions] = useState<GroupedTransactions[]>([]);
+    const [amount, setAmount] = useState<string>('');
+    const [description, setDescription] = useState<string>('');
+    const [type, setType] = useState<'income' | 'expense'>('income');
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    useEffect(() => {
+        fetchTransactions();
+    }, []);
+
+    async function fetchTransactions() {
+        const {data, error} = await supabase.from('transactions').select('*');
+        if (error) console.error(error);
+        else groupTransactions(data as Transaction[]);
+    }
+
+    function groupTransactions(transactions: Transaction[]) {
+        const grouped = transactions.reduce((acc: Record<string, GroupedTransactions>, tx) => {
+            const date = tx.created_at.split('T')[0];
+            if (!acc[date]) {
+                acc[date] = {date, totalIncome: 0, totalExpense: 0, transactions: []};
+            }
+            acc[date].transactions.push(tx);
+            if (tx.type === 'income') acc[date].totalIncome += tx.amount;
+            else acc[date].totalExpense += tx.amount;
+            return acc;
+        }, {});
+        setGroupedTransactions(Object.values(grouped));
+    }
+
+    async function addTransaction() {
+        const newTransaction = {amount: Number(amount), description, type, created_at: new Date().toISOString()};
+        const {error} = await supabase.from('transactions').insert([newTransaction]).select('*');
+        if (error) console.error(error);
+        else {
+            await fetchTransactions();
+            setAmount('');
+            setDescription('');
+        }
+    }
+
+    return (
+        <div className="container mx-auto p-6">
+            <h1 className="text-2xl font-bold mb-4">Expense Tracker</h1>
+            <div className="mb-4">
+                <input
+                    type="text"
+                    placeholder="Description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="border p-2 rounded w-full mb-2"
+                />
+                <input
+                    type="number"
+                    placeholder="Amount"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="border p-2 rounded w-full mb-2"
+                />
+                <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as 'income' | 'expense')}
+                    className="border p-2 rounded w-full mb-2"
+                >
+                    <option value="income">Income</option>
+                    <option value="expense">Expense</option>
+                </select>
+                <button onClick={addTransaction} className="bg-blue-500 text-white p-2 rounded">
+                    Add Transaction
+                </button>
+            </div>
+            <h2 className="text-xl font-bold mt-4">Transaction History</h2>
+            {groupedTransactions.map(({date, totalIncome, totalExpense, transactions}) => (
+                <div key={date} className="border p-4 mb-4 rounded">
+                    <h3 className="font-bold text-lg">{date}</h3>
+                    <p>Total Income: {formatCurrency(totalIncome)}</p>
+                    <p>Total Expense: {formatCurrency(totalExpense)}</p>
+                    <p>Total: {formatCurrency(totalIncome - totalExpense)}</p>
+                    <ul>
+                        {transactions.map((tx) => (
+                            <li key={tx.id} className="border p-2 mb-2 rounded">
+                                {tx.description} - {formatCurrency(tx.amount)} ({tx.type})
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ))}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+    );
 }
