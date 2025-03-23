@@ -48,7 +48,7 @@ export default function Home() {
 
     useEffect(() => {
         fetchTransactions();
-    }, [fetchTransactions]);
+    }, []);
 
     async function fetchTransactions() {
         const {data, error} = await supabase.from('transactions').select('*').order('created_at', {ascending: false});
