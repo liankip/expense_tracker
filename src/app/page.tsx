@@ -1,11 +1,18 @@
 "use client"
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {createClient} from '@supabase/supabase-js';
+import {z} from 'zod';
 
 const supabase = createClient(
     'https://rduiuqfptvqkzucxulsx.supabase.co',
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkdWl1cWZwdHZxa3p1Y3h1bHN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzOTI3NTMsImV4cCI6MjA1Nzk2ODc1M30.Buksbm_h1FhQDKjYRfJ9-rFI2sBnDfCXT_IV5mo6-4Q'
 );
+
+const transactionSchema = z.object({
+    amount: z.string().regex(/^\d+$/, 'Amount must be a valid number').min(1, 'Amount is required'),
+    description: z.string().min(1, 'Description is required'),
+    type: z.enum(['income', 'expense']),
+});
 
 type Transaction = {
     id: number;
@@ -36,13 +43,16 @@ export default function Home() {
     const [amount, setAmount] = useState<string>('');
     const [description, setDescription] = useState<string>('');
     const [type, setType] = useState<'income' | 'expense'>('income');
+    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [errors, setErrors] = useState<{ [key: string]: string }>({});
+    const chartRef = useRef<SVGSVGElement | null>(null);
 
     useEffect(() => {
         fetchTransactions();
     }, []);
 
     async function fetchTransactions() {
-        const {data, error} = await supabase.from('transactions').select('*');
+        const {data, error} = await supabase.from('transactions').select('*').order('created_at', {ascending: false});
         if (error) console.error(error);
         else groupTransactions(data as Transaction[]);
     }
@@ -50,18 +60,41 @@ export default function Home() {
     function groupTransactions(transactions: Transaction[]) {
         const grouped = transactions.reduce((acc: Record<string, GroupedTransactions>, tx) => {
             const date = tx.created_at.split('T')[0];
+
             if (!acc[date]) {
                 acc[date] = {date, totalIncome: 0, totalExpense: 0, transactions: []};
             }
+
             acc[date].transactions.push(tx);
+
             if (tx.type === 'income') acc[date].totalIncome += tx.amount;
             else acc[date].totalExpense += tx.amount;
+
             return acc;
         }, {});
         setGroupedTransactions(Object.values(grouped));
     }
 
     async function addTransaction() {
+        setErrors({});
+        const result = transactionSchema.safeParse({ amount, description, type });
+
+        if (!result.success) {
+            const validationErrors = result.error.format();
+            const formattedErrors: { [key: string]: string } = {};
+
+            if (validationErrors.amount?._errors) {
+                formattedErrors.amount = validationErrors.amount._errors[0];
+            }
+            if (validationErrors.description?._errors) {
+                formattedErrors.description = validationErrors.description._errors[0];
+            }
+
+            setErrors(formattedErrors);
+            return;
+        }
+
+        setIsLoading(true);
         const newTransaction = {amount: Number(amount), description, type, created_at: new Date().toISOString()};
         const {error} = await supabase.from('transactions').insert([newTransaction]).select('*');
         if (error) console.error(error);
@@ -70,6 +103,7 @@ export default function Home() {
             setAmount('');
             setDescription('');
         }
+        setIsLoading(false);
     }
 
     return (
@@ -81,15 +115,17 @@ export default function Home() {
                     placeholder="Description"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="border p-2 rounded w-full mb-2"
+                    className={`border p-2 rounded w-full mb-2 ${errors.description ? 'border-red-500' : ''}`}
                 />
+                {errors.description && <p className="text-red-500 text-sm">{errors.description}</p>}
                 <input
                     type="number"
                     placeholder="Amount"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="border p-2 rounded w-full mb-2"
+                    className={`border p-2 rounded w-full mb-2 ${errors.amount ? 'border-red-500' : ''}`}
                 />
+                {errors.amount && <p className="text-red-500 text-sm">{errors.amount}</p>}
                 <select
                     value={type}
                     onChange={(e) => setType(e.target.value as 'income' | 'expense')}
@@ -98,12 +134,17 @@ export default function Home() {
                     <option value="income">Income</option>
                     <option value="expense">Expense</option>
                 </select>
-                <button onClick={addTransaction} className="bg-blue-500 text-white p-2 rounded">
-                    Add Transaction
+                <button
+                    onClick={addTransaction}
+                    className={`bg-blue-500 text-white p-2 rounded ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isLoading}
+                >
+                    {isLoading ? 'Saving...' : 'Add Transaction'}
                 </button>
             </div>
             <h2 className="text-xl font-bold mt-4">Transaction History</h2>
-            {groupedTransactions.map(({date, totalIncome, totalExpense, transactions}) => (
+
+            {groupedTransactions.map(({ date, totalIncome, totalExpense, transactions }) => (
                 <div key={date} className="border p-4 mb-4 rounded">
                     <h3 className="font-bold text-lg">{date}</h3>
                     <p>Total Income: {formatCurrency(totalIncome)}</p>
@@ -112,7 +153,8 @@ export default function Home() {
                     <ul>
                         {transactions.map((tx) => (
                             <li key={tx.id} className="border p-2 mb-2 rounded">
-                                {tx.description} - {formatCurrency(tx.amount)} ({tx.type})
+                                {tx.description} - {formatCurrency(tx.amount)} <span
+                                className={tx.type == 'income' ? "text-green-600" : "text-red-600"}>({tx.type})</span>
                             </li>
                         ))}
                     </ul>
