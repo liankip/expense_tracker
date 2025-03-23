@@ -45,11 +45,10 @@ export default function Home() {
     const [type, setType] = useState<'income' | 'expense'>('income');
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
-    const chartRef = useRef<SVGSVGElement | null>(null);
 
     useEffect(() => {
         fetchTransactions();
-    }, []);
+    }, [fetchTransactions]);
 
     async function fetchTransactions() {
         const {data, error} = await supabase.from('transactions').select('*').order('created_at', {ascending: false});
